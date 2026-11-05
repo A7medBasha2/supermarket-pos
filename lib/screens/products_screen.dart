@@ -56,10 +56,11 @@ class _ProductsScreenState extends State<ProductsScreen> {
       showSnack(context, 'انتهى الاشتراك: لا يمكن تعديل المنتجات.', error: true);
       return;
     }
-    await Navigator.of(context).push(
+    final saved = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => ProductFormScreen(product: p)),
     );
     _load();
+    if (saved == true && mounted) showSnack(context, 'تم حفظ المنتج');
     SyncService.instance.refreshPending();
     SyncService.instance.sync();
   }

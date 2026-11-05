@@ -46,7 +46,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
     if (code != null) setState(() => _barcode.text = code);
   }
 
-  double _num(TextEditingController c) => double.tryParse(c.text.trim()) ?? 0;
+  double _num(TextEditingController c) => parseNum(c.text) ?? 0;
 
   Future<void> _save() async {
     final name = _name.text.trim();
@@ -54,7 +54,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
       showSnack(context, 'اكتب اسم المنتج', error: true);
       return;
     }
-    if (_price.text.trim().isEmpty || double.tryParse(_price.text.trim()) == null) {
+    if (parseNum(_price.text) == null) {
       showSnack(context, 'اكتب سعر البيع', error: true);
       return;
     }
@@ -91,7 +91,7 @@ class _ProductFormScreenState extends State<ProductFormScreen> {
         stockDelta: delta,
         reason: existing == null ? 'opening' : 'adjustment',
       );
-      if (mounted) Navigator.of(context).pop();
+      if (mounted) Navigator.of(context).pop(true);
     } catch (e) {
       if (mounted) showSnack(context, 'فشل الحفظ: $e', error: true);
     } finally {

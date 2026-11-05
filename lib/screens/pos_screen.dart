@@ -16,33 +16,43 @@ class PosScreen extends StatefulWidget {
 class _PosScreenState extends State<PosScreen> {
   final _search = TextEditingController();
   final _discount = TextEditingController(text: '0');
-  List<Product> _results = [];
+
+  /// قائمة المنتجات المعروضة (كل المنتجات المتاحة، أو نتيجة البحث)
+  List<Product> _list = [];
   final List<CartLine> _cart = [];
   String _payment = 'cash';
   bool _saving = false;
 
   @override
+  void initState() {
+    super.initState();
+    SyncService.instance.addListener(_onSync);
+    _loadList();
+  }
+
+  @override
   void dispose() {
+    SyncService.instance.removeListener(_onSync);
     _search.dispose();
     _discount.dispose();
     super.dispose();
   }
 
+  void _onSync() {
+    if (!SyncService.instance.syncing) _loadList();
+  }
+
   double get _subtotal => _cart.fold<double>(0, (s, l) => s + l.total);
-  double get _discountValue => double.tryParse(_discount.text.trim()) ?? 0;
+  double get _discountValue => parseNum(_discount.text) ?? 0;
   double get _total {
     final t = _subtotal - _discountValue;
     return t < 0 ? 0 : t;
   }
 
-  Future<void> _onQueryChanged(String q) async {
-    if (q.trim().isEmpty) {
-      setState(() => _results = []);
-      return;
-    }
-    final r = await LocalDb.instance.searchProducts(q, activeOnly: true);
+  Future<void> _loadList() async {
+    final r = await LocalDb.instance.searchProducts(_search.text, activeOnly: true);
     if (!mounted) return;
-    setState(() => _results = r.take(8).toList());
+    setState(() => _list = r);
   }
 
   Future<void> _submit(String q) async {
@@ -53,8 +63,8 @@ class _PosScreenState extends State<PosScreen> {
       _add(byCode);
       return;
     }
-    if (_results.length == 1) {
-      _add(_results.first);
+    if (_list.length == 1) {
+      _add(_list.first);
     }
   }
 
@@ -81,8 +91,8 @@ class _PosScreenState extends State<PosScreen> {
         _cart.add(CartLine(pr, 1));
       }
       _search.clear();
-      _results = [];
     });
+    _loadList();
   }
 
   Future<void> _editQty(CartLine line) async {
@@ -101,7 +111,7 @@ class _PosScreenState extends State<PosScreen> {
           TextButton(
               onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, double.tryParse(c.text.trim())),
+            onPressed: () => Navigator.pop(ctx, parseNum(c.text)),
             child: const Text('تم'),
           ),
         ],
@@ -127,18 +137,19 @@ class _PosScreenState extends State<PosScreen> {
     }
     setState(() => _saving = true);
     try {
+      final total = _total;
       await LocalDb.instance.completeSale(
         lines: List<CartLine>.from(_cart),
         discount: _discountValue,
         paymentMethod: _payment,
       );
-      final total = _total;
       if (!mounted) return;
       setState(() {
         _cart.clear();
         _discount.text = '0';
       });
       showSnack(context, 'تم البيع: ${money(total)}');
+      _loadList();
       SyncService.instance.refreshPending();
       SyncService.instance.sync();
     } catch (e) {
@@ -159,7 +170,7 @@ class _PosScreenState extends State<PosScreen> {
               Expanded(
                 child: TextField(
                   controller: _search,
-                  onChanged: _onQueryChanged,
+                  onChanged: (_) => _loadList(),
                   onSubmitted: _submit,
                   decoration: const InputDecoration(
                     labelText: 'ابحث بالاسم أو الباركود',
@@ -178,29 +189,43 @@ class _PosScreenState extends State<PosScreen> {
             ],
           ),
         ),
-        if (_results.isNotEmpty)
-          Container(
-            constraints: const BoxConstraints(maxHeight: 220),
-            margin: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).dividerColor),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (final pr in _results)
-                  ListTile(
-                    dense: true,
-                    title: Text(pr.name),
-                    subtitle: Text('المخزون: ${fmtQty(pr.stockQty)}'),
-                    trailing: Text(money(pr.price)),
-                    onTap: () => _add(pr),
-                  ),
-              ],
-            ),
-          ),
+        // قائمة المنتجات: اضغط على المنتج لإضافته للسلة
         Expanded(
+          flex: 5,
+          child: _list.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text(
+                      'لا توجد منتجات. أضف منتجات من تبويب "المنتجات".',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: _list.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  itemBuilder: (context, i) {
+                    final pr = _list[i];
+                    return ListTile(
+                      dense: true,
+                      title: Text(pr.name),
+                      subtitle: Text(
+                        'المخزون: ${fmtQty(pr.stockQty)}',
+                        style: TextStyle(
+                            color: pr.lowStock ? Colors.red.shade700 : null),
+                      ),
+                      trailing: Text(money(pr.price),
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
+                      onTap: () => _add(pr),
+                    );
+                  },
+                ),
+        ),
+        const Divider(height: 1, thickness: 2),
+        // السلة
+        Expanded(
+          flex: 4,
           child: _cart.isEmpty
               ? const Center(child: Text('السلة فاضية'))
               : ListView.separated(
@@ -210,6 +235,7 @@ class _PosScreenState extends State<PosScreen> {
                     final l = _cart[i];
                     final over = l.qty > l.product.stockQty;
                     return ListTile(
+                      dense: true,
                       title: Text(l.product.name),
                       subtitle: Text(
                         '${money(l.product.price)} × ${fmtQty(l.qty)}'
