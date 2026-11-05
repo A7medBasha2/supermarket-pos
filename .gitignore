@@ -1,0 +1,22 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+pubspec.lock
+
+# Generated at build time by the GitHub Action
+android/
+ios/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Secrets
+.env
+*.jks
+*.keystore
+key.properties

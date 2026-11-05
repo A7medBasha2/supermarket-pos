@@ -1,0 +1,52 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      # مجلد android مش متسجل في الريبو: بنولّده وقت البناء ونحتفظ بكودنا زي ما هو
+      - name: Generate Android scaffold
+        run: |
+          flutter create --platforms=android --project-name supermarket_pos --org com.supermarketpos /tmp/scaffold
+          cp -r /tmp/scaffold/android ./android
+
+      - name: Patch AndroidManifest (INTERNET + CAMERA + app name)
+        run: |
+          f=android/app/src/main/AndroidManifest.xml
+          sed -i 's#<manifest xmlns:android="http://schemas.android.com/apk/res/android">#&\n    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.CAMERA"/>#' "$f"
+          sed -i 's#android:label="supermarket_pos"#android:label="Supermarket POS"#' "$f"
+          grep -q "android.permission.INTERNET" "$f" || { echo "Manifest patch failed"; cat "$f"; exit 1; }
+
+      - run: flutter pub get
+
+      # تحليل الكود: مش بيوقف البناء، بس بيظهر الأخطاء في اللوج لو فيه
+      - name: Analyze
+        run: flutter analyze || true
+
+      - name: Build release APK
+        run: >
+          flutter build apk --release
+          --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
+          --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: supermarket-pos-apk
+          path: build/app/outputs/flutter-apk/app-release.apk

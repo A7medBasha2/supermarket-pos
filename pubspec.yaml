@@ -1,0 +1,24 @@
+name: supermarket_pos
+description: Supermarket management app (offline-first, Supabase backend)
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  supabase_flutter: ^2.8.0
+  sqflite: ^2.4.1
+  path: ^1.9.0
+  mobile_scanner: ^6.0.0
+  uuid: ^4.5.1
+  intl: ^0.20.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
