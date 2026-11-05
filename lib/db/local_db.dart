@@ -260,13 +260,21 @@ class LocalDb {
     );
   }
 
+  /// منتجات وصلت لحد التنبيه (لازم صاحب المحل يكون حاطط "حد التنبيه" أكبر من صفر)
   Future<List<Product>> lowStock() async {
     final d = await db;
     final rows = await d.query('products',
-        where: 'active = 1 AND stock_qty <= min_stock',
+        where: 'active = 1 AND min_stock > 0 AND stock_qty <= min_stock',
         orderBy: 'stock_qty ASC',
         limit: 30);
     return rows.map(Product.fromMap).toList();
+  }
+
+  Future<int> lowStockCount() async {
+    final d = await db;
+    return Sqflite.firstIntValue(await d.rawQuery(
+            'SELECT COUNT(*) FROM products WHERE active = 1 AND min_stock > 0 AND stock_qty <= min_stock')) ??
+        0;
   }
 
   // ----------------------------------------------------------------- sync

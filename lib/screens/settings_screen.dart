@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../services/orders_service.dart';
 import '../services/sync_service.dart';
 import '../util.dart';
+import 'store_settings_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -48,6 +51,7 @@ class SettingsScreen extends StatelessWidget {
       if (ok != true) return;
     }
     sync.stop();
+    await OrdersService.instance.stop();
     await Supabase.instance.client.auth.signOut();
   }
 
@@ -67,7 +71,25 @@ class SettingsScreen extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.vpn_key_outlined),
               title: SelectableText(sync.storeCode ?? '-'),
-              subtitle: const Text('كود المحل (لنسخة العملاء)'),
+              subtitle: const Text('كود المحل (العملاء بيكتبوه في تطبيق العملاء)'),
+              trailing: IconButton(
+                icon: const Icon(Icons.copy),
+                onPressed: sync.storeCode == null
+                    ? null
+                    : () {
+                        Clipboard.setData(ClipboardData(text: sync.storeCode!));
+                        showSnack(context, 'تم نسخ الكود');
+                      },
+              ),
+            ),
+            ListTile(
+              leading: const Icon(Icons.delivery_dining_outlined),
+              title: const Text('إعدادات الطلبات أونلاين'),
+              subtitle: const Text('رسوم التوصيل، الحد الأدنى، قبول الطلبات'),
+              trailing: const Icon(Icons.chevron_left),
+              onTap: () => Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const StoreSettingsScreen()),
+              ),
             ),
             ListTile(
               leading: Icon(

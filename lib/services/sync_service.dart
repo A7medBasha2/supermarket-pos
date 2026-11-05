@@ -21,6 +21,7 @@ class SyncService extends ChangeNotifier {
   String? lastError;
   DateTime? lastSync;
   int pending = 0;
+  int lowStockCount = 0;
 
   String? storeName;
   String? storeCode;
@@ -53,11 +54,13 @@ class SyncService extends ChangeNotifier {
     final until = await db.getMeta('sub_until');
     subUntil = until == null ? null : DateTime.tryParse(until)?.toLocal();
     pending = await db.pendingCount();
+    lowStockCount = await db.lowStockCount();
     notifyListeners();
   }
 
   Future<void> refreshPending() async {
     pending = await LocalDb.instance.pendingCount();
+    lowStockCount = await LocalDb.instance.lowStockCount();
     notifyListeners();
   }
 

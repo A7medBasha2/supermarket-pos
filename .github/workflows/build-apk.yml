@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APKs
 
 on:
   push:
@@ -27,10 +27,10 @@ jobs:
           flutter create --platforms=android --project-name supermarket_pos --org com.supermarketpos /tmp/scaffold
           cp -r /tmp/scaffold/android ./android
 
-      - name: Patch AndroidManifest (INTERNET + CAMERA + app name)
+      - name: Patch AndroidManifest (permissions + app name)
         run: |
           f=android/app/src/main/AndroidManifest.xml
-          sed -i 's#<manifest xmlns:android="http://schemas.android.com/apk/res/android">#&\n    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.CAMERA"/>#' "$f"
+          sed -i 's#<manifest xmlns:android="http://schemas.android.com/apk/res/android">#&\n    <uses-permission android:name="android.permission.INTERNET"/>\n    <uses-permission android:name="android.permission.CAMERA"/>\n    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>\n    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>#' "$f"
           sed -i 's#android:label="supermarket_pos"#android:label="Supermarket POS"#' "$f"
           grep -q "android.permission.INTERNET" "$f" || { echo "Manifest patch failed"; cat "$f"; exit 1; }
 
@@ -40,13 +40,39 @@ jobs:
       - name: Analyze
         run: flutter analyze || true
 
-      - name: Build release APK
+      # ---------- 1) تطبيق صاحب المحل ----------
+      - name: Build owner app (APK)
         run: >
           flutter build apk --release
+          --target lib/main.dart
           --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
           --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
+      - name: Save owner APK
+        run: |
+          mkdir -p dist
+          cp build/app/outputs/flutter-apk/app-release.apk dist/owner-app.apk
+
+      # ---------- 2) تطبيق العملاء (اسم وحزمة مختلفين عشان يتثبتوا مع بعض) ----------
+      - name: Rename package for customer app
+        run: |
+          gradle=$(ls android/app/build.gradle.kts android/app/build.gradle 2>/dev/null | head -1)
+          echo "Using $gradle"
+          sed -i -E 's/applicationId\s*=?\s*"[^"]+"/applicationId = "com.supermarketpos.customer"/' "$gradle"
+          grep -n "applicationId" "$gradle"
+          sed -i 's#android:label="Supermarket POS"#android:label="Supermarket Shop"#' android/app/src/main/AndroidManifest.xml
+
+      - name: Build customer app (APK)
+        run: >
+          flutter build apk --release
+          --target lib/customer/customer_main.dart
+          --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
+          --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+
+      - name: Save customer APK
+        run: cp build/app/outputs/flutter-apk/app-release.apk dist/customer-app.apk
+
       - uses: actions/upload-artifact@v4
         with:
-          name: supermarket-pos-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
+          name: supermarket-apks
+          path: dist/*.apk
