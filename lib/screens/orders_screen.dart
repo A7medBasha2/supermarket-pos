@@ -137,13 +137,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                 leading: CircleAvatar(
                                   backgroundColor:
                                       statusColor(o['status'] as String),
-                                  child: const Icon(Icons.shopping_bag_outlined,
+                                  child: Icon(
+                                      fulfillmentIcon(
+                                          o['fulfillment_type'] as String?),
                                       color: Colors.white),
                                 ),
                                 title: Text(
                                     '${o['customer_name']} • ${money(o['total'] as num)}'),
                                 subtitle: Text(
-                                  '${o['address_text']}\n'
+                                  '${o['fulfillment_type'] == 'pickup' ? 'استلام من المحل' : o['address_text']}\n'
                                   '${items.length} صنف'
                                   '${created == null ? '' : ' • ${DateFormat('MM-dd HH:mm').format(created)}'}',
                                 ),

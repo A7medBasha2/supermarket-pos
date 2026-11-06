@@ -36,6 +36,24 @@ class SyncService extends ChangeNotifier {
     return DateTime.now().isBefore(until.add(const Duration(days: 3)));
   }
 
+  /// تحذير قبل انتهاء الاشتراك بـ 5 أيام أو أثناء فترة السماح (null لو مفيش داعي).
+  /// نفس قاعدة السيرفر: بعد الانتهاء فيه 3 أيام سماح قبل ما التطبيق يتحول للقراءة فقط.
+  String? get subscriptionWarning {
+    final until = subUntil;
+    if (until == null || !subscriptionActive) return null;
+    final now = DateTime.now();
+    if (now.isBefore(until)) {
+      final days = (until.difference(now).inHours / 24).ceil();
+      if (days <= 5) {
+        return 'الاشتراك ينتهي بعد $days يوم. جدّد لتفادي إيقاف التطبيق.';
+      }
+      return null;
+    }
+    final left =
+        (until.add(const Duration(days: 3)).difference(now).inHours / 24).ceil();
+    return 'انتهى الاشتراك. فاضل $left يوم سماح قبل ما التطبيق يتحول للقراءة فقط.';
+  }
+
   void start() {
     _timer ??= Timer.periodic(const Duration(seconds: 45), (_) => sync());
     loadMeta().then((_) => sync());
@@ -71,11 +89,15 @@ class SyncService extends ChangeNotifier {
     lastError = null;
     notifyListeners();
     try {
+      // بيانات المحل والاشتراك الأول ومستقلة عن باقي المزامنة: لو رفع البيانات فشل
+      // لأي سبب (اشتراك منتهي، تعارض باركود...) لازم التطبيق يعرف التجديد فوراً.
+      try {
+        await _pullStoreInfo().timeout(const Duration(seconds: 20));
+      } catch (_) {}
       await _pushProducts().timeout(const Duration(seconds: 40));
       await _pushSales().timeout(const Duration(seconds: 60));
       await _pushMovements().timeout(const Duration(seconds: 40));
       await _pullProducts().timeout(const Duration(seconds: 60));
-      await _pullStoreInfo().timeout(const Duration(seconds: 20));
       lastSync = DateTime.now();
     } on PostgrestException catch (e) {
       if (e.code == '42501') {

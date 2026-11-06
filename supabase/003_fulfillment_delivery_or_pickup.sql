@@ -96,8 +96,9 @@ begin
 end;
 $$;
 
--- 4) إنشاء الطلب بنوعه (بدل النسخة القديمة اللي كانت توصيل فقط)
-drop function if exists public.place_order(text, jsonb, text, text, double precision, double precision, double precision, text);
+-- 4) إنشاء الطلب بنوعه (توصيل / استلام).
+--    النسخة القديمة (8 معاملات) بتفضل موجودة كغلاف للتوصيل فقط (تحت)،
+--    فتطبيق العملاء القديم مايتكسرش لو الـ migration اتشغّل قبل تحديثه.
 
 create or replace function public.place_order(
   p_store_code      text,
@@ -226,6 +227,32 @@ $$;
 
 revoke all on function public.place_order(text, jsonb, text, text, text, double precision, double precision, double precision, text) from public;
 grant execute on function public.place_order(text, jsonb, text, text, text, double precision, double precision, double precision, text) to authenticated;
+
+-- غلاف للنسخة القديمة (من غير p_fulfillment): دايماً توصيل
+create or replace function public.place_order(
+  p_store_code      text,
+  p_items           jsonb,
+  p_address_text    text,
+  p_address_details text,
+  p_lat             double precision,
+  p_lng             double precision,
+  p_accuracy        double precision,
+  p_note            text
+) returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return public.place_order(
+    p_store_code, p_items, 'delivery',
+    p_address_text, p_address_details, p_lat, p_lng, p_accuracy, p_note
+  );
+end;
+$$;
+
+revoke all on function public.place_order(text, jsonb, text, text, double precision, double precision, double precision, text) from public;
+grant execute on function public.place_order(text, jsonb, text, text, double precision, double precision, double precision, text) to authenticated;
 
 -- 5) الكتالوج العام: يضيف خيارات التوصيل/الاستلام
 create or replace function public.public_catalog(p_code text)

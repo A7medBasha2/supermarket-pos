@@ -73,7 +73,6 @@ class CartScreen extends StatelessWidget {
           }
           final subtotal = cart.subtotal;
           final belowMin = subtotal < store.minOrder;
-          final total = subtotal + store.deliveryFee;
           return Column(
             children: [
               Expanded(
@@ -116,9 +115,18 @@ class CartScreen extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    _row('المجموع', money(subtotal)),
-                    _row('رسوم التوصيل', money(store.deliveryFee)),
-                    _row('الإجمالي', money(total), bold: true),
+                    _row('المجموع', money(subtotal), bold: true),
+                    if (store.deliveryAvailable && store.deliveryFee > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            'رسوم التوصيل ${money(store.deliveryFee)} بتتضاف لو اخترت توصيل',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ),
+                      ),
                     if (belowMin)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),

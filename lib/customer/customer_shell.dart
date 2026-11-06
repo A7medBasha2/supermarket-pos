@@ -130,7 +130,9 @@ class _CatalogTabState extends State<_CatalogTab> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                   child: Text(
-                    'رسوم التوصيل ${money(store.deliveryFee)}'
+                    '${store.deliveryAvailable ? 'توصيل (رسوم ${money(store.deliveryFee)})' : ''}'
+                    '${store.deliveryAvailable && store.pickupAvailable ? ' • ' : ''}'
+                    '${store.pickupAvailable ? 'استلام من المحل' : ''}'
                     '${store.minOrder > 0 ? ' • الحد الأدنى ${money(store.minOrder)}' : ''}',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),

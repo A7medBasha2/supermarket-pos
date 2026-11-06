@@ -152,12 +152,18 @@ class _MyOrdersScreenState extends State<MyOrdersScreen> {
             const Divider(),
             Row(
               children: [
-                const Expanded(child: Text('الإجمالي (شامل التوصيل)')),
+                Expanded(
+                    child: Text(o['fulfillment_type'] == 'pickup'
+                        ? 'الإجمالي'
+                        : 'الإجمالي (شامل التوصيل)')),
                 Text(money(o['total'] as num),
                     style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
-            Text('${o['address_text']}',
+            Text(
+                o['fulfillment_type'] == 'pickup'
+                    ? 'استلام من المحل'
+                    : '${o['address_text']}',
                 style: Theme.of(context).textTheme.bodySmall),
             if (status == 'new')
               Align(

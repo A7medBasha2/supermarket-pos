@@ -85,7 +85,7 @@ class SettingsScreen extends StatelessWidget {
             ListTile(
               leading: const Icon(Icons.delivery_dining_outlined),
               title: const Text('إعدادات الطلبات أونلاين'),
-              subtitle: const Text('رسوم التوصيل، الحد الأدنى، قبول الطلبات'),
+              subtitle: const Text('التوصيل والاستلام، الرسوم، الحد الأدنى، قبول الطلبات'),
               trailing: const Icon(Icons.chevron_left),
               onTap: () => Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const StoreSettingsScreen()),

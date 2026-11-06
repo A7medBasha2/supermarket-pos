@@ -3,7 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../util.dart';
 
-/// إعدادات الطلبات أونلاين: قبول الطلبات، رسوم التوصيل، الحد الأدنى، رقم المحل
+/// إعدادات الطلبات أونلاين: قبول الطلبات، التوصيل/الاستلام، رسوم التوصيل، الحد الأدنى، رقم المحل
 class StoreSettingsScreen extends StatefulWidget {
   const StoreSettingsScreen({super.key});
 
@@ -16,6 +16,11 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   final _fee = TextEditingController(text: '0');
   final _min = TextEditingController(text: '0');
   bool _accepting = true;
+  bool _delivery = true;
+  bool _pickup = true;
+
+  /// false لو قاعدة البيانات لسه ماتشغّلش عليها migration 003 (مفيش توصيل/استلام)
+  bool _hasFulfillmentCols = false;
   bool _loading = true;
   bool _saving = false;
   String? _storeId;
@@ -39,17 +44,34 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
 
   Future<void> _load() async {
     try {
-      final row = await _c
-          .from('stores')
-          .select('id, phone, delivery_fee, min_order, accepting_orders')
-          .maybeSingle();
+      Map<String, dynamic>? row;
+      try {
+        row = await _c
+            .from('stores')
+            .select(
+                'id, phone, delivery_fee, min_order, accepting_orders, delivery_enabled, pickup_enabled')
+            .maybeSingle();
+        _hasFulfillmentCols = true;
+      } on PostgrestException {
+        // أعمدة التوصيل/الاستلام مش موجودة لسه (قبل migration 003)
+        row = await _c
+            .from('stores')
+            .select('id, phone, delivery_fee, min_order, accepting_orders')
+            .maybeSingle();
+        _hasFulfillmentCols = false;
+      }
       if (row != null && mounted) {
+        final r = row;
         setState(() {
-          _storeId = row['id'] as String;
-          _phone.text = (row['phone'] as String?) ?? '';
-          _fee.text = fmtQty(row['delivery_fee'] as num);
-          _min.text = fmtQty(row['min_order'] as num);
-          _accepting = row['accepting_orders'] as bool;
+          _storeId = r['id'] as String;
+          _phone.text = (r['phone'] as String?) ?? '';
+          _fee.text = fmtQty(r['delivery_fee'] as num);
+          _min.text = fmtQty(r['min_order'] as num);
+          _accepting = r['accepting_orders'] as bool;
+          if (_hasFulfillmentCols) {
+            _delivery = r['delivery_enabled'] as bool;
+            _pickup = r['pickup_enabled'] as bool;
+          }
         });
       }
     } catch (_) {
@@ -62,15 +84,21 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
   Future<void> _save() async {
     final id = _storeId;
     if (id == null) return;
+    if (_hasFulfillmentCols && !_delivery && !_pickup) {
+      showSnack(context, 'فعّل التوصيل أو الاستلام (واحد على الأقل)', error: true);
+      return;
+    }
     setState(() => _saving = true);
     try {
       final res = await _c
           .from('stores')
-          .update({
+          .update(<String, dynamic>{
             'phone': _phone.text.trim().isEmpty ? null : _phone.text.trim(),
             'delivery_fee': parseNum(_fee.text) ?? 0,
             'min_order': parseNum(_min.text) ?? 0,
             'accepting_orders': _accepting,
+            if (_hasFulfillmentCols) 'delivery_enabled': _delivery,
+            if (_hasFulfillmentCols) 'pickup_enabled': _pickup,
           })
           .eq('id', id)
           .select('id');
@@ -107,6 +135,20 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                       value: _accepting,
                       onChanged: (v) => setState(() => _accepting = v),
                     ),
+                    if (_hasFulfillmentCols) ...[
+                      SwitchListTile(
+                        title: const Text('التوصيل (دليفري)'),
+                        subtitle: const Text('العميل بيحدد موقعه على الخريطة'),
+                        value: _delivery,
+                        onChanged: (v) => setState(() => _delivery = v),
+                      ),
+                      SwitchListTile(
+                        title: const Text('الاستلام من المحل'),
+                        subtitle: const Text('العميل بيجي ياخد طلبه (من غير عنوان)'),
+                        value: _pickup,
+                        onChanged: (v) => setState(() => _pickup = v),
+                      ),
+                    ],
                     const SizedBox(height: 8),
                     TextField(
                       controller: _phone,
@@ -122,7 +164,7 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                       keyboardType:
                           const TextInputType.numberWithOptions(decimal: true),
                       decoration: const InputDecoration(
-                          labelText: 'رسوم التوصيل',
+                          labelText: 'رسوم التوصيل (للتوصيل فقط)',
                           border: OutlineInputBorder()),
                     ),
                     const SizedBox(height: 12),
@@ -134,6 +176,14 @@ class _StoreSettingsScreenState extends State<StoreSettingsScreen> {
                           labelText: 'الحد الأدنى للطلب',
                           border: OutlineInputBorder()),
                     ),
+                    if (!_hasFulfillmentCols)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 12),
+                        child: Text(
+                          'خيارات التوصيل/الاستلام هتظهر بعد تشغيل التحديث الجديد لقاعدة البيانات.',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ),
                     const SizedBox(height: 20),
                     FilledButton(
                       onPressed: _saving ? null : _save,

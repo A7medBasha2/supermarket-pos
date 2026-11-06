@@ -43,6 +43,12 @@ class StoreData {
   final double deliveryFee;
   final double minOrder;
   final bool acceptingOrders;
+
+  /// لو السيرفر لسه على النسخة القديمة (قبل migration 003) مفيش اختيار توصيل/استلام:
+  /// الطلب توصيل فقط. [supportsFulfillment] بيبقى false والتطبيق بيشتغل بالطريقة القديمة.
+  final bool supportsFulfillment;
+  final bool deliveryEnabled;
+  final bool pickupEnabled;
   final List<CatalogProduct> products;
 
   const StoreData({
@@ -55,14 +61,21 @@ class StoreData {
     required this.deliveryFee,
     required this.minOrder,
     required this.acceptingOrders,
+    required this.supportsFulfillment,
+    required this.deliveryEnabled,
+    required this.pickupEnabled,
     required this.products,
   });
+
+  bool get deliveryAvailable => deliveryEnabled;
+  bool get pickupAvailable => supportsFulfillment && pickupEnabled;
 
   factory StoreData.fromCatalog(String code, Map<String, dynamic> m) {
     final s = Map<String, dynamic>.from(m['store'] as Map);
     final products = (m['products'] as List)
         .map((e) => CatalogProduct.fromJson(Map<String, dynamic>.from(e as Map)))
         .toList();
+    final hasFulfillment = s.containsKey('pickup_enabled');
     return StoreData(
       id: s['id'] as String,
       code: code,
@@ -73,6 +86,9 @@ class StoreData {
       deliveryFee: (s['delivery_fee'] as num).toDouble(),
       minOrder: (s['min_order'] as num).toDouble(),
       acceptingOrders: s['accepting_orders'] as bool,
+      supportsFulfillment: hasFulfillment,
+      deliveryEnabled: (s['delivery_enabled'] as bool?) ?? true,
+      pickupEnabled: hasFulfillment ? ((s['pickup_enabled'] as bool?) ?? false) : false,
       products: products,
     );
   }

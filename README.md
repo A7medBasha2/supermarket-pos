@@ -13,7 +13,13 @@
 
 ### 1) قاعدة البيانات (Supabase)
 1. مشروع جديد مجاني على supabase.com.
-2. **SQL Editor ← New query**: شغّل `supabase/schema.sql` كامل، وبعده `supabase/002_orders_and_customers.sql` كامل (الترتيب مهم).
+2. **SQL Editor ← New query**: شغّل بالترتيب (كل ملف كامل، وآمن لو اتشغّل مرتين):
+   1. `supabase/schema.sql`
+   2. `supabase/002_orders_and_customers.sql`
+   3. `supabase/003_fulfillment_delivery_or_pickup.sql` (العميل يختار توصيل أو استلام)
+   4. `supabase/004_admin_subscription_tools.sql` (أدوات تجديد وإيقاف الاشتراكات لك كأدمن)
+
+   لو شغّلت 003 قبل تحديث تطبيق العملاء مفيش مشكلة: نسخة `place_order` القديمة بتفضل شغالة (توصيل فقط).
 3. **Authentication ← Sign In / Providers**: خلّي Email شغال و**عطّل Confirm email** (للتجربة)، و**عطّل Anonymous sign-ins** (التطبيق مش محتاجها).
 4. **Project Settings ← API**: انسخ **Project URL** و **anon / publishable key**.
 
@@ -42,16 +48,23 @@
 - الخريطة OpenStreetMap مجانية. استخدامها الخفيف مسموح، ولو الاستخدام كبر لازم نبدّل لمزوّد خرائط تاني.
 
 ## الاشتراكات (من عندك كأدمن)
-كل محل جديد بياخد **تجربة 14 يوم**. للتجديد من **SQL Editor**:
+كل محل جديد بياخد **تجربة 14 يوم**. بعد تشغيل `004_admin_subscription_tools.sql` تدير كل حاجة من **SQL Editor** بالكود الخاص بالمحل (بتلاقيه في إعدادات تطبيق المحل):
 
 ```sql
-update public.subscriptions
-   set active_until = greatest(active_until, now()) + interval '1 month',
-       status = 'active'
- where store_id = (select id from public.stores where name = 'اسم المحل');
+-- كل المحلات وحالتها (الأقرب للانتهاء الأول): نشط / سماح / منتهي / موقوف
+select * from public.admin_stores_overview();
+
+-- جدّد اشتراك محل شهر (لو لسه شغال بيزوّد على تاريخ الانتهاء، ولو منتهي بيبدأ من النهارده)
+select public.admin_renew_subscription('a1b2c3d4', 1);
+
+-- أوقف محل أو رجّعه
+select public.admin_set_subscription_status('a1b2c3d4', 'suspended');
+select public.admin_set_subscription_status('a1b2c3d4', 'active');
 ```
 
-لإيقاف محل: `update public.subscriptions set status = 'suspended' where store_id = '...';`
+الدوال دي ممنوعة على التطبيقات: بتشتغل من SQL Editor بس.
+
+**تحذيرات قبل الانتهاء:** تطبيق المحل بيعرض شريط برتقالي قبل الانتهاء بـ 5 أيام وأثناء الـ 3 أيام سماح. والتجديد بيظهر في التطبيق تلقائياً في أول مزامنة (خلال ~45 ثانية لو فيه نت).
 
 لما الاشتراك ينتهي (بعد 3 أيام سماح):
 - السيرفر بيرفض أي كتابة (بيع، تعديل منتجات، تغيير حالة الطلبات).

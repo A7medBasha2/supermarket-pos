@@ -49,6 +49,11 @@ String orderErrorText(String msg) {
   if (m.contains('below minimum')) return 'الطلب أقل من الحد الأدنى';
   if (m.contains('product unavailable')) return 'أحد المنتجات لم يعد متاحاً';
   if (m.contains('not a customer')) return 'سجّل خروج ثم ادخل من جديد';
+  if (m.contains('delivery not available')) return 'التوصيل غير متاح حالياً';
+  if (m.contains('pickup not available')) return 'الاستلام من المحل غير متاح حالياً';
+  if (m.contains('invalid location') || m.contains('address required')) {
+    return 'حدد عنوان التوصيل على الخريطة';
+  }
   return msg;
 }
 
@@ -67,7 +72,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _loading = true;
   bool _placing = false;
 
+  /// 'delivery' أو 'pickup'
+  late String _type = widget.store.deliveryAvailable ? 'delivery' : 'pickup';
+
   SupabaseClient get _c => Supabase.instance.client;
+
+  bool get _isDelivery => _type == 'delivery';
 
   @override
   void initState() {
@@ -148,29 +158,35 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _place() async {
+    final store = widget.store;
     SavedAddress? addr;
-    for (final a in _addresses) {
-      if (a.id == _selectedId) addr = a;
-    }
-    if (addr == null) {
-      showSnack(context, 'اختار عنوان التوصيل أو أضف عنوان جديد', error: true);
-      return;
+    if (_isDelivery) {
+      for (final a in _addresses) {
+        if (a.id == _selectedId) addr = a;
+      }
+      if (addr == null) {
+        showSnack(context, 'اختار عنوان التوصيل أو أضف عنوان جديد', error: true);
+        return;
+      }
     }
     final cart = CartController.instance;
     setState(() => _placing = true);
     try {
-      await _c.rpc('place_order', params: {
-        'p_store_code': widget.store.code,
+      await _c.rpc('place_order', params: <String, dynamic>{
+        'p_store_code': store.code,
         'p_items': cart.items
             .map((i) => {'product_id': i.product.id, 'qty': i.qty})
             .toList(),
-        'p_address_text': addr.addressText,
-        'p_address_details': addr.details,
-        'p_lat': addr.lat,
-        'p_lng': addr.lng,
-        'p_accuracy': addr.accuracyM,
+        // لو السيرفر لسه على النسخة القديمة (من غير migration 003) مبنبعتش نوع الطلب
+        if (store.supportsFulfillment) 'p_fulfillment': _type,
+        'p_address_text': addr?.addressText,
+        'p_address_details': addr?.details,
+        'p_lat': addr?.lat,
+        'p_lng': addr?.lng,
+        'p_accuracy': addr?.accuracyM,
         'p_note': _note.text.trim(),
       });
+      final wasDelivery = _isDelivery;
       cart.clear();
       if (!mounted) return;
       await showDialog<void>(
@@ -179,8 +195,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         builder: (ctx) => AlertDialog(
           icon: const Icon(Icons.check_circle, color: Colors.green, size: 48),
           title: const Text('تم إرسال طلبك'),
-          content: const Text(
-              'المتجر هيتواصل معاك ويجهّز الطلب. تقدر تتابع الحالة من "طلباتي".'),
+          content: Text(wasDelivery
+              ? 'المتجر هيتواصل معاك ويجهّز الطلب. تقدر تتابع الحالة من "طلباتي".'
+              : 'المتجر هيجهّز طلبك ويبلّغك لما يبقى جاهز للاستلام. تقدر تتابع الحالة من "طلباتي".'),
           actions: [
             FilledButton(
                 onPressed: () => Navigator.pop(ctx), child: const Text('تمام')),
@@ -199,9 +216,14 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final store = widget.store;
     final cart = CartController.instance;
     final subtotal = cart.subtotal;
-    final total = subtotal + widget.store.deliveryFee;
+    final fee = _isDelivery ? store.deliveryFee : 0.0;
+    final total = subtotal + fee;
+    final nothingAvailable = !store.deliveryAvailable && !store.pickupAvailable;
+    final both = store.deliveryAvailable && store.pickupAvailable;
+
     return Scaffold(
       appBar: AppBar(title: const Text('إتمام الطلب')),
       body: _loading
@@ -209,38 +231,80 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                Text('عنوان التوصيل',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 8),
-                for (final a in _addresses)
+                if (nothingAvailable)
+                  Card(
+                    color: Colors.red.shade50,
+                    child: const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text('المتجر لا يوفّر توصيل ولا استلام حالياً.'),
+                    ),
+                  )
+                else if (both) ...[
+                  Text('طريقة الاستلام',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  SegmentedButton<String>(
+                    showSelectedIcon: false,
+                    segments: const [
+                      ButtonSegment<String>(
+                          value: 'delivery',
+                          label: Text('توصيل'),
+                          icon: Icon(Icons.delivery_dining)),
+                      ButtonSegment<String>(
+                          value: 'pickup',
+                          label: Text('استلام من المحل'),
+                          icon: Icon(Icons.storefront_outlined)),
+                    ],
+                    selected: {_type},
+                    onSelectionChanged: (s) => setState(() => _type = s.first),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                if (!nothingAvailable && _isDelivery) ...[
+                  Text('عنوان التوصيل',
+                      style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  for (final a in _addresses)
+                    Card(
+                      child: ListTile(
+                        leading: Icon(
+                          _selectedId == a.id
+                              ? Icons.check_circle
+                              : Icons.circle_outlined,
+                          color: _selectedId == a.id
+                              ? Theme.of(context).colorScheme.primary
+                              : null,
+                        ),
+                        title: Text(a.label),
+                        subtitle: Text(
+                          '${a.addressText}\n${a.details ?? ''}\n'
+                          '${accuracyText(a.accuracyM)}',
+                        ),
+                        isThreeLine: true,
+                        trailing: IconButton(
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _deleteAddress(a),
+                        ),
+                        onTap: () => setState(() => _selectedId = a.id),
+                      ),
+                    ),
+                  OutlinedButton.icon(
+                    onPressed: _addAddress,
+                    icon: const Icon(Icons.add_location_alt_outlined),
+                    label: const Text('إضافة عنوان جديد (على الخريطة)'),
+                  ),
+                ],
+                if (!nothingAvailable && !_isDelivery)
                   Card(
                     child: ListTile(
-                      leading: Icon(
-                        _selectedId == a.id
-                            ? Icons.check_circle
-                            : Icons.circle_outlined,
-                        color: _selectedId == a.id
-                            ? Theme.of(context).colorScheme.primary
-                            : null,
-                      ),
-                      title: Text(a.label),
-                      subtitle: Text(
-                        '${a.addressText}\n${a.details ?? ''}\n'
-                        '${accuracyText(a.accuracyM)}',
-                      ),
-                      isThreeLine: true,
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => _deleteAddress(a),
-                      ),
-                      onTap: () => setState(() => _selectedId = a.id),
+                      leading: const Icon(Icons.storefront_outlined),
+                      title: Text('استلام من ${store.name}'),
+                      subtitle: Text(store.phone == null || store.phone!.isEmpty
+                          ? 'هتستلم طلبك من المحل لما يبقى جاهز.'
+                          : 'هتستلم طلبك من المحل لما يبقى جاهز.\nتليفون المحل: ${store.phone}'),
+                      isThreeLine: !(store.phone == null || store.phone!.isEmpty),
                     ),
                   ),
-                OutlinedButton.icon(
-                  onPressed: _addAddress,
-                  icon: const Icon(Icons.add_location_alt_outlined),
-                  label: const Text('إضافة عنوان جديد (على الخريطة)'),
-                ),
                 const SizedBox(height: 16),
                 TextField(
                   controller: _note,
@@ -256,7 +320,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                     child: Column(
                       children: [
                         _row('المجموع', money(subtotal)),
-                        _row('رسوم التوصيل', money(widget.store.deliveryFee)),
+                        if (_isDelivery)
+                          _row('رسوم التوصيل', money(store.deliveryFee)),
                         _row('الإجمالي', money(total), bold: true),
                         const SizedBox(height: 6),
                         const Align(
@@ -269,7 +334,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 ),
                 const SizedBox(height: 16),
                 FilledButton(
-                  onPressed: _placing ? null : _place,
+                  onPressed: (_placing || nothingAvailable) ? null : _place,
                   child: _placing
                       ? const SizedBox(
                           height: 18,

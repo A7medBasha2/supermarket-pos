@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../db/local_db.dart';
 import '../services/orders_service.dart';
 import '../services/sync_service.dart';
-import '../util.dart';
 import 'orders_screen.dart';
 import 'pos_screen.dart';
 import 'products_screen.dart';
@@ -123,6 +122,10 @@ class _StatusBanner extends StatelessWidget {
         if (!sync.subscriptionActive) {
           return _bar(Colors.red.shade700,
               'انتهى الاشتراك: التطبيق للقراءة فقط. جدّد الاشتراك لاستكمال البيع.');
+        }
+        final warn = sync.subscriptionWarning;
+        if (warn != null) {
+          return _bar(Colors.orange.shade800, warn);
         }
         if (sync.pending > 0) {
           return _bar(

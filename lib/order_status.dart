@@ -4,6 +4,7 @@ const orderStatuses = [
   'new',
   'preparing',
   'out_for_delivery',
+  'ready_for_pickup',
   'delivered',
   'cancelled',
 ];
@@ -16,6 +17,8 @@ String statusLabel(String s) {
       return 'قيد التجهيز';
     case 'out_for_delivery':
       return 'في الطريق';
+    case 'ready_for_pickup':
+      return 'جاهز للاستلام';
     case 'delivered':
       return 'تم التسليم';
     case 'cancelled':
@@ -33,6 +36,8 @@ Color statusColor(String s) {
       return Colors.orange.shade800;
     case 'out_for_delivery':
       return Colors.purple.shade600;
+    case 'ready_for_pickup':
+      return Colors.teal.shade700;
     case 'delivered':
       return Colors.green.shade700;
     case 'cancelled':
@@ -41,6 +46,14 @@ Color statusColor(String s) {
       return Colors.grey;
   }
 }
+
+/// نوع الطلب: delivery (توصيل) أو pickup (استلام من المحل).
+/// الطلبات القديمة من غير النوع بتتعامل كتوصيل.
+String fulfillmentLabel(String? type) =>
+    type == 'pickup' ? 'استلام من المحل' : 'توصيل';
+
+IconData fulfillmentIcon(String? type) =>
+    type == 'pickup' ? Icons.storefront_outlined : Icons.delivery_dining;
 
 /// وصف دقة الموقع (accuracy_m = null يعني العميل حدد الدبوس يدوياً)
 String accuracyText(num? meters) {
