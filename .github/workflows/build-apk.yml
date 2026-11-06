@@ -34,6 +34,72 @@ jobs:
           sed -i 's#android:label="supermarket_pos"#android:label="Supermarket POS"#' "$f"
           grep -q "android.permission.INTERNET" "$f" || { echo "Manifest patch failed"; cat "$f"; exit 1; }
 
+      # ---------- توقيع ثابت (مفتاح واحد) ----------
+      # لو الـ secrets الأربعة موجودة: كل البنايات (والتطبيقين) بتتوقّع بنفس المفتاح،
+      # فأندرويد يقبل التحديث فوق النسخة القديمة. لو ناقصة: بيرجع للتوقيع المؤقت مع تحذير.
+      - name: Configure release signing (fixed key)
+        env:
+          KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          if [ -z "$KS_B64" ] || [ -z "$KS_PASS" ] || [ -z "$KEY_ALIAS" ]; then
+            echo "::warning::Signing secrets are missing. APKs are signed with a TEMPORARY key and cannot update an installed app. See README."
+            exit 0
+          fi
+          echo "$KS_B64" | base64 -d > android/app/release.jks
+          {
+            echo "storePassword=$KS_PASS"
+            echo "keyPassword=${KEY_PASS:-$KS_PASS}"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "storeFile=release.jks"
+          } > android/key.properties
+          python3 - <<'PY'
+          import pathlib, re
+          kts = pathlib.Path("android/app/build.gradle.kts")
+          groovy = pathlib.Path("android/app/build.gradle")
+          if kts.exists():
+              p = kts
+              block = (
+                  '    signingConfigs {\n'
+                  '        create("release") {\n'
+                  '            val props = java.util.Properties()\n'
+                  '            props.load(java.io.FileInputStream(rootProject.file("key.properties")))\n'
+                  '            keyAlias = props["keyAlias"] as String\n'
+                  '            keyPassword = props["keyPassword"] as String\n'
+                  '            storeFile = file(props["storeFile"] as String)\n'
+                  '            storePassword = props["storePassword"] as String\n'
+                  '        }\n'
+                  '    }\n\n'
+              )
+              pattern = r'signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)'
+              repl = 'signingConfig = signingConfigs.getByName("release")'
+          else:
+              p = groovy
+              block = (
+                  '    signingConfigs {\n'
+                  '        release {\n'
+                  '            def props = new Properties()\n'
+                  '            props.load(new FileInputStream(rootProject.file("key.properties")))\n'
+                  '            keyAlias props["keyAlias"]\n'
+                  '            keyPassword props["keyPassword"]\n'
+                  '            storeFile file(props["storeFile"])\n'
+                  '            storePassword props["storePassword"]\n'
+                  '        }\n'
+                  '    }\n\n'
+              )
+              pattern = r'signingConfig\s+signingConfigs\.debug'
+              repl = 'signingConfig signingConfigs.release'
+          t = p.read_text()
+          assert "    buildTypes {" in t, "buildTypes block not found"
+          t = t.replace("    buildTypes {", block + "    buildTypes {", 1)
+          t, n = re.subn(pattern, repl, t)
+          assert n == 1, "debug signingConfig line not found"
+          p.write_text(t)
+          print("release signing configured in", p)
+          PY
+
       - run: flutter pub get
 
       # تحليل الكود: مش بيوقف البناء، بس بيظهر الأخطاء في اللوج لو فيه
@@ -44,6 +110,7 @@ jobs:
       - name: Build owner app (APK)
         run: >
           flutter build apk --release
+          --build-number=${{ github.run_number }}
           --target lib/main.dart
           --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
           --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
@@ -65,12 +132,23 @@ jobs:
       - name: Build customer app (APK)
         run: >
           flutter build apk --release
+          --build-number=${{ github.run_number }}
           --target lib/customer/customer_main.dart
           --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}"
           --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
       - name: Save customer APK
         run: cp build/app/outputs/flutter-apk/app-release.apk dist/customer-app.apk
+
+      # بصمة شهادة التوقيع: لازم تبقى نفسها في كل بناء عشان التحديث فوق النسخة القديمة يشتغل
+      - name: Print APK signing certificate
+        run: |
+          AS=$(ls "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -1)
+          if [ -z "$AS" ]; then echo "apksigner not found"; exit 0; fi
+          for f in dist/*.apk; do
+            echo "== $f"
+            "$AS" verify --print-certs "$f" | grep -E "Signer #1 certificate (DN|SHA-256)"
+          done
 
       - uses: actions/upload-artifact@v4
         with:
