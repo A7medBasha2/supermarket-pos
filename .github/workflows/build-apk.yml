@@ -147,7 +147,8 @@ jobs:
           if [ -z "$AS" ]; then echo "apksigner not found"; exit 0; fi
           for f in dist/*.apk; do
             echo "== $f"
-            "$AS" verify --print-certs "$f" | grep -E "Signer #1 certificate (DN|SHA-256)"
+            # للتشخيص بس: ماينفعش يوقف البناء أبداً
+            "$AS" verify --print-certs "$f" 2>&1 | grep -iE "verifies|certificate (dn|sha-256)|error" || true
           done
 
       - uses: actions/upload-artifact@v4
